@@ -1,0 +1,266 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- ENUMS ---
+
+enum Role {
+  ADMIN
+  OWNER
+  INVESTOR
+  TENANT
+}
+
+enum PropertyStatus {
+  PENDING    // Menunggu verifikasi admin
+  ACTIVE     // Sedang masa funding
+  FUNDED     // Target dana tercapai
+  REJECTED   // Ditolak admin
+  INACTIVE   // di Nonaktifkan admin
+}
+
+enum RentalStatus {
+  PENDING
+  ACTIVE
+  CANCELLED 
+  ENDED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  VERIFIED
+  FAILED
+}
+
+// --- MODELS ---
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  fullName      String
+  role          Role      @default(INVESTOR)
+  walletAddress String?   @unique
+  phone         String?
+  avatar        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  dateOfBirth   DateTime?   // ← tambah
+  emergencyName String?     // ← tambah
+  emergencyPhone String?     // ← tambah
+  emergencyRel   String?     // ← tambah
+  isSuspended    Boolean      @default(false)
+  reputationScore Int      @default(100) // ← Tambahkan ini
+
+  kycStatus       String? @default("PENDING")
+  kycDocumentUrl  String?
+
+  properties    Property[]
+  investments   Investment[]
+  rentals       Rental[]
+  dividends     Dividend[]
+  tenantReports Report[] @relation("TenantReports")
+
+  sellerListings MarketplaceListing[] @relation("SellerListings")
+
+  notifications Notification[]
+  reviews       Review[]  @relation("TenantReviews")
+
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String    @default("SYSTEM") // KYC|DIVIDEND|MARKET|SYSTEM|PAYMENT|RENTAL
+  title     String
+  message   String
+  isRead    Boolean   @default(false)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model Property {
+  id                String         @id @default(uuid())
+  ownerId           String
+  owner             User           @relation(fields: [ownerId], references: [id])
+  title             String
+  description       String         @db.Text
+  location          String
+  roi               Float?    // untuk proyeksi yield investor
+  latitude          Float?    // untuk peta akurat tanpa geocoding
+  longitude         Float?    // sama
+  category          String
+
+  fundingTarget     Float
+  currentFunding    Float          @default(0)
+  tokenPrice        Float
+  totalTokens       Int
+  contractAddress   String?
+  ipfsLegalDoc      String?
+
+  isClaimed         Boolean   @default(false)
+  claimedAt         DateTime?
+  claimedTxHash     String?
+
+  status            PropertyStatus @default(PENDING)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  images            PropertyImage[]
+  rooms             Room[]
+  investments       Investment[]
+  dividends         Dividend[]
+  reports           Report[]
+  rentals           Rental[]   // ← pastikan ada
+
+  listings          MarketplaceListing[]
+  reviews           Review[]
+}
+
+model PropertyImage {
+  id         String   @id @default(uuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  url        String
+}
+
+model Investment {
+  id          String   @id @default(uuid())
+  investorId  String
+  investor    User     @relation(fields: [investorId], references: [id])
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id])
+
+  tokenAmount Int
+  totalPaid   Float
+  txHash      String
+  createdAt   DateTime @default(now())
+}
+
+model Room {
+  id            String   @id @default(uuid())
+  propertyId    String
+  property      Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomNumber    String
+  pricePerMonth Float
+  isAvailable   Boolean  @default(true)
+  status        String   @default("AVAILABLE") // ← pastikan ada ini
+  facilities    String[]
+
+  rentals       Rental[]
+  reports       Report[]
+}
+
+model Rental {
+  id          String       @id @default(uuid())
+  tenantId    String
+  tenant      User         @relation(fields: [tenantId], references: [id])
+  roomId      String?
+  room        Room?         @relation(fields: [roomId], references: [id])
+  propertyId String?                                                   // ← tambah ini 
+  property Property? @relation(fields: [propertyId], references: [id]) // ← tambah ini
+
+  startDate   DateTime
+  endDate     DateTime?
+  status      RentalStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+
+  payments    Payment[]
+  notes       String?   // ← tambah ini
+  reviews     Review[]
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  rentalId      String
+  rental        Rental        @relation(fields: [rentalId], references: [id])
+  amount        Float
+  paymentDate   DateTime      @default(now())
+  status        PaymentStatus @default(PENDING)
+  paymentProof  String?
+  txHash        String?
+  paymentType   String?  
+  month         Int?     
+  year          Int?    
+
+  isDistributed Boolean       @default(false)
+}
+
+model Dividend {
+  id          String   @id @default(uuid())
+  investorId  String
+  investor    User     @relation(fields: [investorId], references: [id])
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id])
+  claimedAt   DateTime? // ← tambahkan ini
+  status      String   @default("PENDING")  // ← tambahkan ini
+
+  amount      Float
+  txHash      String
+  createdAt   DateTime @default(now())
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  category    String   // Plumbing, Electrical, Furniture, dll
+  priority    String   @default("Medium") // Low, Medium, High
+  status      String   @default("NEW")    // NEW, IN_PROGRESS, RESOLVED
+  imageUrl    String?
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id])
+  roomId      String?
+  room        Room?    @relation(fields: [roomId], references: [id])
+  tenantId    String
+  tenant      User     @relation("TenantReports", fields: [tenantId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model MarketplaceListing {
+  id          String   @id @default(cuid())
+  sellerId    String
+  seller      User     @relation("SellerListings", fields: [sellerId], references: [id])
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id])
+  tokenAmount Int
+  pricePerToken Float
+  totalPrice  Float
+  status      String   @default("OPEN")  // OPEN, SOLD, CANCELLED
+  txHash      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Review {
+  id            String   @id @default(cuid())
+  rentalId      String
+  rental        Rental   @relation(fields: [rentalId], references: [id])
+  tenantId      String
+  tenant        User     @relation("TenantReviews", fields: [tenantId], references: [id])
+  propertyId    String
+  property      Property @relation(fields: [propertyId], references: [id])
+
+  maintenance   Int      // 1–5
+  communication Int      // 1–5
+  cleanliness   Int      // 1–5
+  avgRating     Float
+  ownerReply  String?   @db.Text   // ← tambah
+  repliedAt   DateTime?             // ← tambah
+
+  comment       String   @db.Text
+  photoUrl      String?  // IPFS URL
+
+  createdAt     DateTime @default(now())
+}
