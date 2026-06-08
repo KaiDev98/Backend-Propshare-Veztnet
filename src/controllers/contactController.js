@@ -12,7 +12,7 @@ const sendGuestMessage = async (req, res) => {
 
     await resend.emails.send({
       from: 'PropShare <onboarding@resend.dev>', // pakai ini dulu sebelum verify domain
-      to: 'muhammadrifkirusli@gmail.com',
+      to: 'muhammadrifkimms@gmail.com',
       replyTo: email,
       subject: `Pesan Baru dari Guest: ${name} - PropShare Campus`,
       html: `
